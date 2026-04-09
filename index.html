@@ -201,6 +201,22 @@
             text-align: center;
             font-weight: bold;
         }
+        
+        .otp-card {
+            background: linear-gradient(135deg, #1e1b4b, #312e81);
+            border: 2px solid #4f46e5;
+        }
+        
+        .otp-code-input {
+            font-size: 1.5rem;
+            text-align: center;
+            letter-spacing: 5px;
+        }
+        
+        .navbar {
+            backdrop-filter: blur(10px);
+            background: rgba(255,255,255,0.95) !important;
+        }
     </style>
 </head>
 <body>
@@ -374,7 +390,18 @@
             <div class="row">
                 <div class="col-md-8">
                     <div class="glass-card lab-status-card mb-3"><h6><i class="fas fa-microchip me-2"></i>Lab Status</h6><div class="d-flex justify-content-between"><span>Current Visitors:</span><span id="studentCurrentVisitors" class="fw-bold">0</span></div><div class="d-flex justify-content-between"><span>Free Seats:</span><span id="studentFreeSeats" class="fw-bold">20</span></div></div>
-                    <div class="glass-card otp-verification-card mb-3" style="background:#eff6ff; border:2px solid #0284c7;"><h6><i class="fas fa-qrcode me-2 text-primary"></i>OTP Verification</h6><div id="otpStatus"></div><div class="input-group mb-2"><input type="text" id="otpCode" class="form-control otp-code-input" placeholder="0000" maxlength="4"><button onclick="verifyOTPCode()" class="btn btn-primary">Verify</button></div><div id="otpMessage" class="small"></div></div>
+                    <div class="glass-card otp-verification-card mb-3" style="background:#eff6ff; border:2px solid #0284c7;">
+                        <h6><i class="fas fa-qrcode me-2 text-primary"></i>OTP Verification</h6>
+                        <div id="otpStatus"></div>
+                        <div class="input-group mb-2">
+                            <input type="text" id="otpCode" class="form-control otp-code-input" placeholder="0000" maxlength="4">
+                            <button onclick="verifyOTPCode()" class="btn btn-primary">Verify</button>
+                        </div>
+                        <button onclick="forceCheckOTP()" class="btn btn-sm btn-outline-secondary w-100 mt-2">
+                            <i class="fas fa-sync-alt"></i> Check OTP Status
+                        </button>
+                        <div id="otpMessage" class="small mt-2"></div>
+                    </div>
                     <div class="glass-card"><ul class="nav nav-tabs mb-3"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#materials">Materials</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#assignmentsTab">Assignments</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#quizzesTab">Quizzes</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#myResults">My Results</button></li></ul><div class="tab-content"><div class="tab-pane fade show active" id="materials"><div id="materialList"></div></div><div class="tab-pane fade" id="assignmentsTab"><div id="studentAssignmentsList"></div></div><div class="tab-pane fade" id="quizzesTab"><div id="studentQuizzesList"></div></div><div class="tab-pane fade" id="myResults"><div id="studentQuizResults"></div></div></div></div>
                 </div>
                 <div class="col-md-4"><div class="glass-card"><h6><i class="fas fa-history me-2"></i>Attendance History</h6><hr><div id="attendanceLogs"></div></div></div>
@@ -523,46 +550,156 @@ async function loadDashboardStats() {
     attendanceChart = new Chart(ctx, { type: 'line', data: { labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'], datasets: [{ label: 'Attendance %', data: [65, 70, 75, avgAttendance], borderColor: '#4f46e5', fill: true }] } });
 }
 
-// ==================== LAB STATUS ====================
+// ==================== LAB STATUS - المعدلة للعمل مع ESP ====================
 function listenLabStatus() {
+    // الاستماع لعدد الزوار من المسار الصحيح للـ ESP
     db.ref('Library_Status/current_visitors').on('value', (snapshot) => {
-        const visitors = snapshot.val() || 0, freeSeats = 20 - visitors, percentage = (visitors / 20) * 100;
-        if (document.getElementById('currentVisitors')) { document.getElementById('currentVisitors').innerText = visitors; document.getElementById('freeSeats').innerText = freeSeats; document.getElementById('capacityBar').style.width = percentage + '%'; }
-        if (document.getElementById('studentCurrentVisitors')) { document.getElementById('studentCurrentVisitors').innerText = visitors; document.getElementById('studentFreeSeats').innerText = freeSeats; }
+        const visitors = snapshot.val() || 0;
+        const freeSeats = 20 - visitors;
+        const percentage = (visitors / 20) * 100;
+        
+        console.log("✅ Visitors from ESP:", visitors);
+        
+        if (document.getElementById('currentVisitors')) {
+            document.getElementById('currentVisitors').innerText = visitors;
+            document.getElementById('freeSeats').innerText = freeSeats;
+            document.getElementById('capacityBar').style.width = percentage + '%';
+            
+            if (percentage >= 90) {
+                document.getElementById('capacityBar').className = 'progress-bar bg-danger';
+            } else if (percentage >= 70) {
+                document.getElementById('capacityBar').className = 'progress-bar bg-warning';
+            } else {
+                document.getElementById('capacityBar').className = 'progress-bar bg-success';
+            }
+        }
+        
+        if (document.getElementById('studentCurrentVisitors')) {
+            document.getElementById('studentCurrentVisitors').innerText = visitors;
+            document.getElementById('studentFreeSeats').innerText = freeSeats;
+        }
     });
 }
 
-// ==================== OTP FUNCTIONS ====================
+// ==================== OTP FUNCTIONS - المعدلة للعمل مع ESP ====================
 function listenForOTP() {
+    // الاستماع لـ OTP من المسار الصحيح للـ ESP
     db.ref('Pending_Attendance').on('value', (snapshot) => {
         const data = snapshot.val();
+        console.log("✅ OTP from ESP:", data);
+        
         if (data && data.otp_code) {
             currentOTP = data.otp_code;
-            document.getElementById('otpStatus').innerHTML = `<div class="alert alert-success py-1">New OTP: <strong class="fs-4">${currentOTP}</strong></div>`;
-            setTimeout(() => { if (currentOTP === data.otp_code) { document.getElementById('otpStatus').innerHTML = `<div class="alert alert-warning py-1">OTP expired. Scan RFID again.</div>`; currentOTP = null; } }, 60000);
+            const rfidCard = data.current_rfid || "Unknown";
+            
+            document.getElementById('otpStatus').innerHTML = `
+                <div class="alert alert-success py-2">
+                    <i class="fas fa-qrcode me-2"></i>
+                    <strong>New OTP: <span class="fs-1">${currentOTP}</span></strong>
+                    <br><small>Card: ${rfidCard.substring(0, 8)}...</small>
+                </div>`;
+            
+            // إضافة صوت اختياري
+            // const audio = new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3');
+            // audio.play();
+            
+            setTimeout(() => { 
+                if (currentOTP === data.otp_code) {
+                    document.getElementById('otpStatus').innerHTML = 
+                        `<div class="alert alert-warning py-1">⏰ OTP expired. Scan RFID again.</div>`;
+                    currentOTP = null;
+                }
+            }, 60000);
+        }
+    });
+}
+
+function forceCheckOTP() {
+    db.ref('Pending_Attendance').once('value', (snapshot) => {
+        const data = snapshot.val();
+        console.log("Manual OTP check:", data);
+        if (data && data.otp_code) {
+            currentOTP = data.otp_code;
+            document.getElementById('otpStatus').innerHTML = `
+                <div class="alert alert-success py-2">
+                    <strong>Current OTP: ${currentOTP}</strong>
+                </div>`;
+            showToast('OTP refreshed!', 'success');
+        } else {
+            document.getElementById('otpStatus').innerHTML = 
+                `<div class="alert alert-warning py-1">No OTP found. Please scan RFID card on the device.</div>`;
+            showToast('No OTP found. Scan RFID card.', 'warning');
         }
     });
 }
 
 async function verifyOTPCode() {
     const inputCode = document.getElementById('otpCode').value.trim();
-    if (!inputCode || inputCode.length !== 4) return showToast('Enter valid 4-digit code', 'error');
-    if (!currentOTP) return showToast('No active OTP. Scan your RFID card.', 'error');
-    if (inputCode !== String(currentOTP)) return showToast('Invalid OTP code!', 'error');
+    if (!inputCode || inputCode.length !== 4) {
+        showToast('⚠️ Enter valid 4-digit code', 'error');
+        return;
+    }
+    
+    if (!currentOTP) {
+        showToast('⚠️ No active OTP. Please scan your RFID card on the device.', 'error');
+        return;
+    }
+    
+    if (inputCode !== String(currentOTP)) {
+        showToast('❌ Invalid OTP code!', 'error');
+        return;
+    }
+    
     showLoading(true);
     try {
         const sessionSnap = await db.ref('active_session').once('value');
         const session = sessionSnap.val();
-        if (!session || session.status !== 'active' || session.courseId !== activeCourse) { showToast('No active session', 'error'); return; }
+        
+        if (!session || session.status !== 'active') {
+            showToast('No active session. Please ask instructor to start a session.', 'error');
+            return;
+        }
+        
         const existing = await db.ref(`attendance/${currentUser.studentID}`).once('value');
-        if (existing.exists()) { showToast('Attendance already recorded', 'warning'); return; }
+        if (existing.exists()) {
+            showToast('✓ Attendance already recorded!', 'warning');
+            document.getElementById('otpCode').value = '';
+            return;
+        }
+        
         const time = getCurrentTime();
-        await db.ref(`attendance/${currentUser.studentID}`).set({ name: currentUser.fullName, studentID: currentUser.studentID, time, otpVerified: true });
-        await db.ref(`student_logs/${currentUser.studentID}/${activeCourse}`).push({ date: getCurrentDate(), time, otpVerified: true });
+        const date = getCurrentDate();
+        
+        await db.ref(`attendance/${currentUser.studentID}`).set({
+            name: currentUser.fullName,
+            studentID: currentUser.studentID,
+            time: time,
+            date: date,
+            otpVerified: true,
+            verifiedAt: Date.now()
+        });
+        
+        await db.ref(`student_logs/${currentUser.studentID}/${activeCourse}`).push({
+            date: date,
+            time: time,
+            otpVerified: true,
+            timestamp: Date.now()
+        });
+        
         document.getElementById('otpCode').value = '';
-        showToast('Attendance recorded successfully!', 'success');
-    } catch (error) { showToast('Error recording attendance', 'error'); }
-    finally { showLoading(false); }
+        showToast(`✅ Attendance recorded successfully at ${time}!`, 'success');
+        
+        currentOTP = null;
+        document.getElementById('otpStatus').innerHTML = 
+            `<div class="alert alert-info py-1">✓ Attendance recorded! Scan RFID for next session.</div>`;
+        
+    } catch (error) {
+        console.error("Error:", error);
+        showToast('Error recording attendance: ' + error.message, 'error');
+    }
+    finally { 
+        showLoading(false); 
+    }
 }
 
 // ==================== TEACHER FUNCTIONS ====================
@@ -603,8 +740,8 @@ function listenAttendance() {
     db.ref('attendance').on('value', snapshot => {
         const tbody = document.getElementById('attTable');
         let html = '', i = 1;
-        snapshot.forEach(child => { const att = child.val(); const badge = att.otpVerified ? '<span class="badge bg-success ms-2">OTP</span>' : ''; html += `<tr><td class="fw-bold">${i++}</td><td>👤 ${att.name}${badge}</td><td>${att.studentID}</td><td>🕐 ${att.time}</td><td>✅</td></tr>`; });
-        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No attendance yet</td></tr>';
+        snapshot.forEach(child => { const att = child.val(); const badge = att.otpVerified ? '<span class="badge bg-success ms-2">OTP</span>' : ''; html += `<tr><td class="fw-bold">${i++}</td><td>👤 ${att.name}${badge}</td><td>${att.studentID}</td><td>🕐 ${att.time}</td><td>✅<\/span></td>`; });
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No attendance yet<\/td></tr>';
         document.getElementById('attCount').innerText = snapshot.numChildren();
     });
 }
@@ -743,7 +880,7 @@ async function loadQuizzes() {
 }
 window.deleteQuiz = async function(key) { if (confirm('Delete this quiz?')) { await db.ref('quizzes/' + key).remove(); showToast('Quiz deleted', 'success'); loadQuizzes(); } };
 
-// ==================== IMPROVED QUIZ RESULTS FUNCTIONS ====================
+// ==================== QUIZ RESULTS FUNCTIONS ====================
 async function loadQuizResults() {
     const container = document.getElementById('quizResultsList');
     if (!container) return;
@@ -783,7 +920,6 @@ async function loadQuizResults() {
                     let studentName = result.studentName || 'Student';
                     let studentID = result.studentID || 'N/A';
                     
-                    // Try to get student info from users if not available
                     if (!result.studentName && result.studentID) {
                         const userSnap = await db.ref(`users`).once('value');
                         userSnap.forEach(userChild => {
@@ -805,7 +941,7 @@ async function loadQuizResults() {
                 }
                 
                 html += `<tr class="table-secondary"><td colspan="2"><strong>Average Score</strong></td><td colspan="3"><strong class="text-primary fs-5">${avgScore.toFixed(1)}%</strong></td></tr>`;
-                html += `</tbody></table></div></div>`;
+                html += `</tbody><table></div></div>`;
             }
         }
         
@@ -971,15 +1107,12 @@ window.takeQuiz = async function(quizId, title, questions) {
             timestamp: new Date().toISOString()
         };
         
-        // Save result in multiple locations for better retrieval
         await db.ref(`quiz_results/${resultId}`).set(resultData);
         await db.ref(`student_results/${currentUser.studentID}/${quizId}`).set(resultData);
         await db.ref(`course_results/${activeCourse}/${quizId}/${currentUser.studentID}`).set(resultData);
         
-        // Refresh results display
         await loadStudentQuizResults(activeCourse);
         
-        // Also refresh teacher results if teacher dashboard is open
         if (document.getElementById('teacherDash').classList.contains('page-active')) {
             await loadQuizResults();
         }
@@ -988,7 +1121,6 @@ window.takeQuiz = async function(quizId, title, questions) {
         document.getElementById('studentQuizzesList').innerHTML = resultHtml;
         showToast(`Quiz submitted! Your score: ${percentage}%`, 'success');
         
-        // Clean up
         delete window.tempAnswers;
         delete window.selectAnswerTemp;
         delete window.submitQuizAnswers;
@@ -1003,6 +1135,53 @@ document.addEventListener('DOMContentLoaded', () => {
     if (endToggle) endToggle.addEventListener('change', function() { document.getElementById('endScheduleOptions').classList.toggle('d-none', !this.checked); });
 });
 
+// Export functions
+async function exportAttendanceReport() {
+    showToast('Exporting attendance report...', 'info');
+    const snapshot = await db.ref('attendance').once('value');
+    const data = [];
+    snapshot.forEach(child => {
+        const att = child.val();
+        data.push({
+            'Student Name': att.name,
+            'Student ID': att.studentID,
+            'Time': att.time,
+            'Date': att.date || new Date().toLocaleDateString(),
+            'Verified': att.otpVerified ? 'Yes' : 'No'
+        });
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+    XLSX.writeFile(wb, `attendance_${new Date().toISOString().slice(0,19)}.xlsx`);
+    showToast('Report exported successfully!', 'success');
+}
+
+async function generatePDFReport() {
+    showToast('Generating PDF...', 'info');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.text('Attendance Report', 20, 20);
+    doc.text(`Date: ${new Date().toLocaleString()}`, 20, 30);
+    doc.text(`Course: ${activeCourse}`, 20, 40);
+    
+    const snapshot = await db.ref('attendance').once('value');
+    let y = 60;
+    let i = 1;
+    snapshot.forEach(child => {
+        const att = child.val();
+        doc.text(`${i}. ${att.name} (${att.studentID}) - ${att.time}`, 20, y);
+        y += 10;
+        i++;
+        if (y > 270) {
+            doc.addPage();
+            y = 20;
+        }
+    });
+    doc.save(`attendance_${Date.now()}.pdf`);
+    showToast('PDF generated!', 'success');
+}
+
 // ==================== MAKE GLOBAL ====================
 window.navigateTo = navigateTo; window.backToChoice = backToChoice; window.handleAuth = handleAuth; window.logout = logout;
 window.setUploadType = setUploadType; window.startSession = startSession; window.stopSession = stopSession;
@@ -1011,8 +1190,14 @@ window.openCourse = openCourse; window.closeDetails = closeDetails; window.selec
 window.createAssignment = createAssignment; window.createQuiz = createQuiz; window.addQuestion = addQuestion;
 window.removeQuestion = removeQuestion; window.updateQuestion = updateQuestion; window.takeQuiz = takeQuiz;
 window.deleteContent = deleteContent; window.deleteAssignment = deleteAssignment; window.deleteQuiz = deleteQuiz;
+window.forceCheckOTP = forceCheckOTP;
 
-document.addEventListener('DOMContentLoaded', () => { checkExistingSession(); });
+// بدء التطبيق
+document.addEventListener('DOMContentLoaded', () => { 
+    checkExistingSession();
+    listenLabStatus();
+});
 </script>
+
 </body>
 </html>
