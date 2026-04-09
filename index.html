@@ -162,6 +162,45 @@
             .choice-card i { font-size: 3rem; }
             .stats-number { font-size: 1.8rem; }
         }
+        
+        .result-item {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 12px;
+            transition: all 0.3s ease;
+        }
+        
+        .result-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .cursor-pointer {
+            cursor: pointer;
+        }
+        
+        .spinner-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        
+        .countdown-timer {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -262,15 +301,13 @@
                 </div>
             </div>
 
-            <!-- Quizzes Tab with enhanced options -->
+            <!-- Quizzes Tab -->
             <div class="tab-pane fade" id="quizzes">
                 <div class="row">
                     <div class="col-lg-5">
                         <div class="glass-card">
                             <h5 class="fw-bold mb-3"><i class="fas fa-plus-circle me-2 text-primary"></i>Create Quiz</h5>
                             <input id="quizTitle" class="form-control mb-2" placeholder="Quiz Title">
-                            
-                            <!-- Who can see this quiz -->
                             <div class="mb-3">
                                 <label class="form-label fw-bold">Who can take this quiz?</label>
                                 <select id="quizTarget" class="form-select mb-2">
@@ -278,8 +315,6 @@
                                     <option value="attended">Only Students Who Attended</option>
                                 </select>
                             </div>
-                            
-                            <!-- Schedule Start Time -->
                             <div class="mb-3">
                                 <div class="form-check form-switch mb-2">
                                     <input class="form-check-input" type="checkbox" id="scheduleStartToggle">
@@ -292,8 +327,6 @@
                                     <small class="text-muted">Quiz will be available only after this time</small>
                                 </div>
                             </div>
-                            
-                            <!-- Schedule End Time -->
                             <div class="mb-3">
                                 <div class="form-check form-switch mb-2">
                                     <input class="form-check-input" type="checkbox" id="scheduleEndToggle">
@@ -306,7 +339,6 @@
                                     <small class="text-muted">Quiz will close after this time</small>
                                 </div>
                             </div>
-                            
                             <div id="quizQuestions"></div>
                             <button onclick="addQuestion()" class="btn btn-outline-primary w-100 mb-2">+ Add Question</button>
                             <button onclick="createQuiz()" class="btn btn-primary-custom">Create Quiz</button>
@@ -571,7 +603,7 @@ function listenAttendance() {
     db.ref('attendance').on('value', snapshot => {
         const tbody = document.getElementById('attTable');
         let html = '', i = 1;
-        snapshot.forEach(child => { const att = child.val(); const badge = att.otpVerified ? '<span class="badge bg-success ms-2">OTP</span>' : ''; html += `<tr><td class="fw-bold">${i++}</td><td>👤 ${att.name}${badge}</td><td>${att.studentID}</td><td>🕐 ${att.time}</td><td>✅</td>`; });
+        snapshot.forEach(child => { const att = child.val(); const badge = att.otpVerified ? '<span class="badge bg-success ms-2">OTP</span>' : ''; html += `<tr><td class="fw-bold">${i++}</td><td>👤 ${att.name}${badge}</td><td>${att.studentID}</td><td>🕐 ${att.time}</td><td>✅</td></tr>`; });
         tbody.innerHTML = html || '<tr><td colspan="5" class="text-center">No attendance yet</td></tr>';
         document.getElementById('attCount').innerText = snapshot.numChildren();
     });
@@ -711,7 +743,7 @@ async function loadQuizzes() {
 }
 window.deleteQuiz = async function(key) { if (confirm('Delete this quiz?')) { await db.ref('quizzes/' + key).remove(); showToast('Quiz deleted', 'success'); loadQuizzes(); } };
 
-// ==================== QUIZ RESULTS - TEACHER ====================
+// ==================== IMPROVED QUIZ RESULTS FUNCTIONS ====================
 async function loadQuizResults() {
     const container = document.getElementById('quizResultsList');
     if (!container) return;
@@ -722,68 +754,66 @@ async function loadQuizResults() {
         const quizzesSnap = await db.ref('quizzes').orderByChild('courseId').equalTo(activeCourse).once('value');
         const resultsSnap = await db.ref('quiz_results').once('value');
         
-        let html = '';
+        if (!quizzesSnap.exists()) {
+            container.innerHTML = '<p class="text-muted text-center">No quizzes created yet</p>';
+            return;
+        }
         
-        for (const quizChild of Object.values(quizzesSnap.val() || {})) {
-            const quizId = Object.keys(quizzesSnap.val()).find(key => quizzesSnap.val()[key] === quizChild);
-            const quiz = quizChild;
-            
+        let html = '';
+        const quizzes = [];
+        
+        quizzesSnap.forEach((quizChild, quizId) => {
+            quizzes.push({ id: quizId, data: quizChild.val() });
+        });
+        
+        for (const quiz of quizzes) {
             const results = [];
             resultsSnap.forEach(resultChild => {
                 const result = resultChild.val();
-                if (result.quizId === quizId || (result.quizTitle === quiz.title && result.courseId === activeCourse)) {
+                if (result.quizId === quiz.id || result.quizTitle === quiz.data.title) {
                     results.push(result);
                 }
             });
             
             if (results.length > 0) {
                 const avgScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
-                html += `<div class="mb-4"><h6 class="fw-bold">📊 ${quiz.title}</h6><div class="table-responsive"><table class="table table-sm table-bordered"><thead class="table-light"><tr><th>Student</th><th>Score</th><th>Date</th></tr></thead><tbody>`;
+                html += `<div class="result-item mb-4"><h6 class="fw-bold text-primary">📊 ${quiz.data.title}</h6><div class="table-responsive"><table class="table table-sm table-hover"><thead class="table-light"><tr><th>Student Name</th><th>Student ID</th><th>Score</th><th>Correct/Total</th><th>Date</th></tr></thead><tbody>`;
                 
                 for (const result of results) {
-                    const userSnap = await db.ref(`users/${result.studentID || Object.keys(result)[0]}`).once('value');
-                    const studentName = userSnap.val()?.fullName || result.studentName || 'Student';
-                    html += `<tr><td>${studentName}</td><td><strong class="text-success">${result.score}%</strong></td><td>${new Date(result.date).toLocaleString()}</td></tr>`;
+                    let studentName = result.studentName || 'Student';
+                    let studentID = result.studentID || 'N/A';
+                    
+                    // Try to get student info from users if not available
+                    if (!result.studentName && result.studentID) {
+                        const userSnap = await db.ref(`users`).once('value');
+                        userSnap.forEach(userChild => {
+                            const user = userChild.val();
+                            if (user.studentID === result.studentID || user.uid === result.studentID) {
+                                studentName = user.fullName || studentName;
+                            }
+                        });
+                    }
+                    
+                    const scoreClass = result.score >= 70 ? 'bg-success' : (result.score >= 50 ? 'bg-warning' : 'bg-danger');
+                    html += `<tr>
+                        <td><strong>${studentName}</strong></td>
+                        <td><small class="text-muted">${studentID}</small></td>
+                        <td><span class="badge ${scoreClass} fs-6 p-2">${result.score}%</span></td>
+                        <td>${result.correctAnswers || 0}/${result.totalQuestions || 0}</td>
+                        <td><small>${new Date(result.date).toLocaleString()}</small></td>
+                    </tr>`;
                 }
                 
-                html += `<tr class="table-secondary"><td><strong>Average</strong></td><td><strong>${avgScore.toFixed(1)}%</strong></td><td></td></tr>`;
+                html += `<tr class="table-secondary"><td colspan="2"><strong>Average Score</strong></td><td colspan="3"><strong class="text-primary fs-5">${avgScore.toFixed(1)}%</strong></td></tr>`;
                 html += `</tbody></table></div></div>`;
             }
         }
         
-        container.innerHTML = html || '<p class="text-muted text-center">No quiz results yet</p>';
+        container.innerHTML = html || '<p class="text-muted text-center">No quiz results available yet</p>';
     } catch (error) {
         console.error("Error loading results:", error);
-        container.innerHTML = '<p class="text-danger text-center">Error loading results</p>';
+        container.innerHTML = '<p class="text-danger text-center">Error loading results. Please try again.</p>';
     }
-}
-
-// ==================== EXPORT FUNCTIONS ====================
-async function exportAttendanceReport() {
-    const snapshot = await db.ref('attendance').once('value');
-    const attendance = [];
-    snapshot.forEach(child => { const att = child.val(); attendance.push({ Name: att.name, 'Student ID': att.studentID, Time: att.time, 'OTP Verified': att.otpVerified ? 'Yes' : 'No' }); });
-    if (attendance.length === 0) return showToast('No data to export', 'error');
-    const ws = XLSX.utils.json_to_sheet(attendance);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
-    XLSX.writeFile(wb, `attendance_${activeCourse}.xlsx`);
-    showToast('Exported successfully', 'success');
-}
-async function generatePDFReport() {
-    const snapshot = await db.ref('attendance').once('value');
-    const attendance = [];
-    snapshot.forEach(child => attendance.push(child.val()));
-    if (attendance.length === 0) return showToast('No data to export', 'error');
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    doc.text(`Attendance Report - ${activeCourse}`, 20, 20);
-    doc.text(`Date: ${getCurrentDate()}`, 20, 35);
-    doc.text(`Total: ${attendance.length} students`, 20, 45);
-    let y = 65;
-    attendance.forEach((att, idx) => { doc.text(`${idx + 1}. ${att.name} (${att.studentID}) - ${att.time}`, 20, y); y += 10; if (y > 280) { doc.addPage(); y = 20; } });
-    doc.save(`attendance_${activeCourse}.pdf`);
-    showToast('PDF exported', 'success');
 }
 
 // ==================== STUDENT FUNCTIONS ====================
@@ -830,18 +860,20 @@ async function loadStudentQuizzes(cid) {
     let html = '';
     const now = Date.now();
     
-    // Get student's attendance status
     const logsSnap = await db.ref(`student_logs/${currentUser.studentID}/${cid}`).once('value');
     const hasAttended = logsSnap.exists();
     
-    for (const child of Object.values(snapshot.val() || {})) {
-        const quizId = Object.keys(snapshot.val()).find(key => snapshot.val()[key] === child);
-        const quiz = child;
+    if (!snapshot.exists()) {
+        container.innerHTML = '<p class="text-muted text-center">No quizzes available</p>';
+        return;
+    }
+    
+    snapshot.forEach((quizChild, quizId) => {
+        const quiz = quizChild.val();
         
-        // Check if student can take this quiz based on attendance
         if (quiz.target === 'attended' && !hasAttended) {
             html += `<div class="file-item mb-2"><div><strong>🎯 ${quiz.title}</strong><small class="text-muted d-block">${quiz.questions?.length || 0} questions</small><span class="badge bg-secondary ms-2">Attendance Required</span></div><span class="text-muted">You need to attend the lab first</span></div>`;
-            continue;
+            return;
         }
         
         let canTake = true;
@@ -856,24 +888,24 @@ async function loadStudentQuizzes(cid) {
             statusText = `<span class="badge bg-danger ms-2">Ended: ${new Date(quiz.endTime).toLocaleString()}</span>`;
         }
         
-        html += `<div class="file-item mb-2"><div><strong>🎯 ${quiz.title}</strong><small class="text-muted d-block">${quiz.questions?.length || 0} questions</small>${statusText}</div>${canTake ? `<button class="btn btn-sm btn-primary" onclick="takeQuiz('${quizId}', '${quiz.title}', ${JSON.stringify(quiz.questions).replace(/"/g, '&quot;')})"><i class="fas fa-play"></i> Take Quiz</button>` : '<span class="text-muted">Not available yet</span>'}</div>`;
-    }
-    container.innerHTML = html || '<p class="text-muted text-center">No quizzes available</p>';
+        html += `<div class="file-item mb-2"><div><strong>🎯 ${quiz.title}</strong><small class="text-muted d-block">${quiz.questions?.length || 0} questions</small>${statusText}</div>${canTake ? `<button class="btn btn-sm btn-primary" onclick='takeQuiz("${quizId}", "${quiz.title}", ${JSON.stringify(quiz.questions)})'><i class="fas fa-play"></i> Take Quiz</button>` : '<span class="text-muted">Not available yet</span>'}</div>`;
+    });
+    container.innerHTML = html;
 }
 
 async function loadStudentQuizResults(cid) {
     const container = document.getElementById('studentQuizResults');
     if (!container) return;
     
-    container.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading results...</div>';
+    container.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading your results...</div>';
     
     try {
         const resultsSnapshot = await db.ref(`quiz_results`).once('value');
-        let results = [];
+        const results = [];
         
         resultsSnapshot.forEach(child => {
             const result = child.val();
-            if (result.courseId === cid && (child.key.includes(currentUser.studentID) || result.studentID === currentUser.studentID)) {
+            if ((result.studentID === currentUser.studentID || result.studentID === currentUser.uid) && result.courseId === cid) {
                 results.push(result);
             }
         });
@@ -886,18 +918,18 @@ async function loadStudentQuizResults(cid) {
         results.sort((a, b) => b.date - a.date);
         const avgScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
         
-        let html = `<div class="mb-3 p-3 bg-light rounded text-center"><strong>Average Score:</strong><span class="badge ${avgScore >= 70 ? 'bg-success' : (avgScore >= 50 ? 'bg-warning' : 'bg-danger')} fs-5 mx-2">${avgScore.toFixed(1)}%</span><small class="text-muted">(${results.length} quizzes taken)</small></div>`;
+        let html = `<div class="mb-3 p-3 bg-light rounded text-center"><strong>Your Average Score:</strong><span class="badge ${avgScore >= 70 ? 'bg-success' : (avgScore >= 50 ? 'bg-warning' : 'bg-danger')} fs-5 mx-2">${avgScore.toFixed(1)}%</span><small class="text-muted">(${results.length} quizzes taken)</small></div>`;
         
         results.forEach(result => {
             const scoreClass = result.score >= 70 ? 'bg-success' : (result.score >= 50 ? 'bg-warning' : 'bg-danger');
             const icon = result.score >= 80 ? '🏆' : (result.score >= 60 ? '📚' : '📖');
-            html += `<div class="file-item mb-2"><div><strong>${icon} ${result.quizTitle || 'Quiz'}</strong><small class="text-muted d-block">${new Date(result.date).toLocaleString()}</small>${result.correctAnswers ? `<small class="text-muted">${result.correctAnswers}/${result.totalQuestions} correct</small>` : ''}</div><div><span class="badge ${scoreClass} fs-6 p-2">${result.score}%</span></div></div>`;
+            html += `<div class="result-item"><div><strong>${icon} ${result.quizTitle || 'Quiz'}</strong><small class="text-muted d-block">${new Date(result.date).toLocaleString()}</small>${result.correctAnswers ? `<small class="text-muted">${result.correctAnswers}/${result.totalQuestions} correct</small>` : ''}</div><div><span class="badge ${scoreClass} fs-6 p-2">${result.score}%</span></div></div>`;
         });
         
         container.innerHTML = html;
     } catch (error) {
         console.error("Error loading results:", error);
-        container.innerHTML = '<p class="text-danger text-center">Error loading results</p>';
+        container.innerHTML = '<p class="text-danger text-center">Error loading results. Please try again.</p>';
     }
 }
 
@@ -920,10 +952,12 @@ window.takeQuiz = async function(quizId, title, questions) {
     
     window.submitQuizAnswers = async function(quizId, title, questions) {
         if (Object.keys(tempAnswers).length !== questions.length) { showToast(`Please answer all ${questions.length} questions`, 'error'); return; }
+        
         let score = 0;
         questions.forEach((q, idx) => { if (tempAnswers[idx] === q.correct) score++; });
         const percentage = Math.round((score / questions.length) * 100);
         
+        const resultId = `${currentUser.studentID}_${quizId}_${Date.now()}`;
         const resultData = {
             score: percentage,
             date: Date.now(),
@@ -933,18 +967,31 @@ window.takeQuiz = async function(quizId, title, questions) {
             correctAnswers: score,
             totalQuestions: questions.length,
             studentName: currentUser.fullName,
-            studentID: currentUser.studentID
+            studentID: currentUser.studentID,
+            timestamp: new Date().toISOString()
         };
         
-        await db.ref(`quiz_results/${currentUser.studentID}/${quizId}`).set(resultData);
+        // Save result in multiple locations for better retrieval
+        await db.ref(`quiz_results/${resultId}`).set(resultData);
+        await db.ref(`student_results/${currentUser.studentID}/${quizId}`).set(resultData);
         await db.ref(`course_results/${activeCourse}/${quizId}/${currentUser.studentID}`).set(resultData);
         
+        // Refresh results display
         await loadStudentQuizResults(activeCourse);
+        
+        // Also refresh teacher results if teacher dashboard is open
+        if (document.getElementById('teacherDash').classList.contains('page-active')) {
+            await loadQuizResults();
+        }
         
         const resultHtml = `<div class="result-card glass-card text-center"><i class="fas fa-trophy fa-4x text-success mb-3"></i><h3>Quiz Completed!</h3><div class="result-score">${percentage}%</div><p>You got ${score} out of ${questions.length} correct</p><div class="progress mb-3"><div class="progress-bar bg-success" style="width: ${percentage}%"></div></div><div class="d-flex gap-2"><button class="btn btn-primary" onclick="location.reload()">Back to Quizzes</button><button class="btn btn-outline-primary" onclick="document.querySelector('[data-bs-target=\\'#myResults\\']').click();">View My Results</button></div></div>`;
         document.getElementById('studentQuizzesList').innerHTML = resultHtml;
         showToast(`Quiz submitted! Your score: ${percentage}%`, 'success');
+        
+        // Clean up
         delete window.tempAnswers;
+        delete window.selectAnswerTemp;
+        delete window.submitQuizAnswers;
     };
 };
 
